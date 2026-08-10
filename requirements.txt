@@ -1,1 +1,2 @@
-python main.py
+discord.py
+flask
