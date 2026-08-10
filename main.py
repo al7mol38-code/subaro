@@ -1,5 +1,21 @@
+guild.get_member(
+            int(user_id)
+        )
+
+        if member:
+            name = member.mention
+        else:
+            name = f"<@{user_id}>"
+
+        message += (
+            f"**{i}.** {name} — ⭐ **{score}**\n"
+        )
+
+    await ctx.send(message)
+
+
 # =========================
-# المساعدة
+# Help
 # =========================
 
 @bot.command(name="مساعدة")
@@ -11,17 +27,17 @@ async def help_command(ctx):
         "`=نقاط @العضو -6` — خصم نقاط\n"
         "`=نقاط @العضو` — عرض النقاط\n"
         "`=توب` — أفضل 10 أعضاء\n"
-        "`=مساعدة` — الأوامر"
+        "`=مساعدة` — المساعدة"
     )
 
 
 # =========================
-# تشغيل Web + Discord
+# Start
 # =========================
 
 if not TOKEN:
     raise ValueError(
-        "❌ لم يتم وضع DISCORD_TOKEN"
+        "❌ DISCORD_TOKEN غير موجود"
     )
 
 
