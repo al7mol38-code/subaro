@@ -1,7 +1,7 @@
 import os
-import json
 import threading
 from flask import Flask
+from pymongo import MongoClient
 import discord
 from discord.ext import commands
 
@@ -20,6 +20,16 @@ ALLOWED_ROLE_IDS = {
 }
 
 # =========================
+# MongoDB
+# =========================
+
+MONGO_URI = os.getenv("MONGO_URI")
+
+client = MongoClient(MONGO_URI)
+db = client["pointsbot"]
+points_collection = db["points"]
+
+# =========================
 # إعداد البوت
 # =========================
 
@@ -34,160 +44,135 @@ bot = commands.Bot(
 )
 
 # =========================
-# قاعدة البيانات
-# =========================
-
-DATA_FILE = "points.json"
-
-if not os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump({}, f)
-
-data_lock = threading.Lock()
-
-
-def load_points():
-    with data_lock:
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return {}
-
-
-def save_points(data):
-    with data_lock:
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-
-# =========================
-# التحقق من الصلاحية
+# الدوال المساعدة
 # =========================
 
 def has_points_permission(member):
     return any(role.id in ALLOWED_ROLE_IDS for role in member.roles)
 
+def get_points(user_id):
+    user = points_collection.find_one({"_id": str(user_id)})
+    return user["points"] if user else 0
+
+def set_points(user_id, points):
+    points_collection.update_one(
+        {"_id": str(user_id)},
+        {"$set": {"points": points}},
+        upsert=True
+    )
 
 # =========================
-# عند تشغيل البوت
+# أحداث البوت (Events)
 # =========================
 
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
-    print("Points Bot is ready!")
-
+    print("Bot Ready!")
 
 # =========================
-# أمر المساعدة
+# الأوامر (Commands)
 # =========================
 
 @bot.command(name="مساعدة")
 async def help_command(ctx):
     embed = discord.Embed(
-        title="📋 أوامر Points",
+        title="📋 أوامر البوت",
         description=(
-            "`=نقاط @العضو +6` — إضافة نقاط\n"
-            "`=نقاط @العضو -6` — خصم نقاط\n"
-            "`=نقاط @العضو` — عرض نقاط عضو\n"
-            "`=توب` — عرض أعلى الأعضاء\n"
-            "`=مساعدة` — عرض هذه القائمة"
-        )
+            "`=نقاط @العضو +5` ➜ إضافة نقاط\n"
+            "`=نقاط @العضو -5` ➜ خصم نقاط\n"
+            "`=نقاط @العضو` ➜ عرض نقاط العضو\n"
+            "`=توب` ➜ أفضل 10 أعضاء"
+        ),
+        color=discord.Color.blue()
     )
-
     await ctx.send(embed=embed)
 
 
-# =========================
-# أمر النقاط
-# =========================
-
 @bot.command(name="نقاط")
-async def points_command(ctx, member: discord.Member = None, amount: int = None):
-
-    # إذا كان الأمر بدون عضو
+async def points(ctx, member: discord.Member = None, amount: str = None):
+    # إذا لم يتم تحديد عضو، يعرض نقاط مرسل الأمر تلقائياً
     if member is None:
-        await ctx.send("❌ استخدم الأمر بهذا الشكل:\n`=نقاط @العضو +6`")
+        member = ctx.author
+
+    # في حال استعلام عن نقاط العضو فقط (=نقاط @العضو)
+    if amount is None:
+        user_points = get_points(member.id)
+        await ctx.send(f"⭐ نقاط {member.mention}: **{user_points}**")
         return
 
-    # إذا كان إضافة أو خصم
-    if amount is not None:
-
-        if not has_points_permission(ctx.author):
-            await ctx.send("❌ ما عندك صلاحية استخدام أوامر النقاط.")
-            return
-
-        data = load_points()
-
-        user_id = str(member.id)
-
-        if user_id not in data:
-            data[user_id] = 0
-
-        data[user_id] += amount
-
-        # منع النقاط من النزول تحت الصفر
-        if data[user_id] < 0:
-            data[user_id] = 0
-
-        save_points(data)
-
-        if amount > 0:
-            await ctx.send(
-                f"✅ تمت إضافة {amount} نقطة إلى {member.mention}\n"
-                f"⭐ نقاطه الآن: **{data[user_id]}**"
-            )
-        else:
-            await ctx.send(
-                f"✅ تم خصم {abs(amount)} نقطة من {member.mention}\n"
-                f"⭐ نقاطه الآن: **{data[user_id]}**"
-            )
-
+    # التعديل على النقاط يحتاج صلاحية
+    if not has_points_permission(ctx.author):
+        await ctx.send("❌ ليس لديك صلاحية لإضافة أو خصم النقاط.")
         return
 
-    # عرض نقاط العضو
-    data = load_points()
-    user_id = str(member.id)
+    # محاولة تحويل المبلغ إلى رقم
+    try:
+        val = int(amount)
+    except ValueError:
+        await ctx.send("❌ صيغة المبلغ غير صحيحة! استخدم مثلاً: `=نقاط @العضو +5` أو `=نقاط @العضو -5`")
+        return
 
-    points = data.get(user_id, 0)
+    current = get_points(member.id)
+    current += val
 
-    await ctx.send(
-        f"⭐ نقاط {member.mention}: **{points}**"
-    )
+    if current < 0:
+        current = 0
 
+    set_points(member.id, current)
 
-# =========================
-# أمر التوب
-# =========================
+    if val >= 0:
+        await ctx.send(f"✅ تمت إضافة **{val}** نقطة إلى {member.mention}\n⭐ المجموع: **{current}**")
+    else:
+        await ctx.send(f"✅ تم خصم **{abs(val)}** نقطة من {member.mention}\n⭐ المجموع: **{current}**")
+
 
 @bot.command(name="توب")
-async def top_command(ctx):
+async def top(ctx):
+    users = list(
+        points_collection.find().sort("points", -1).limit(10)
+    )
 
-    data = load_points()
-
-    if not data:
+    if not users:
         await ctx.send("📭 لا توجد نقاط حتى الآن.")
         return
 
-    sorted_points = sorted(
-        data.items(),
-        key=lambda x: x[1],
-        reverse=True
-    )
-
     description = ""
+    for index, user in enumerate(users, start=1):
+        member = ctx.guild.get_member(int(user["_id"]))
+        name = member.display_name if member else f"<@{user['_id']}>"
+        description += f"**{index}.** {name} — ⭐ **{user['points']}**\n"
 
-    rank = 1
+    embed = discord.Embed(
+        title="🏆 Top Points",
+        description=description,
+        color=discord.Color.gold()
+    )
+    await ctx.send(embed=embed)
 
-    for user_id, points in sorted_points[:10]:
+# =========================
+# Flask (Keep Alive)
+# =========================
 
-        try:
-            member = ctx.guild.get_member(int(user_id))
+app = Flask(__name__)
 
-            if member:
-                name = member.display_name
-            else:
-                name = f"<@{user_id}>"
+@app.route("/")
+def home():
+    return "Points Bot Online"
 
-        except:
+def run_flask():
+    port = int(os.getenv("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+# =========================
+# تشغيل البوت
+# =========================
+
+if __name__ == "__main__":
+    threading.Thread(target=run_flask, daemon=True).start()
+
+    token = os.getenv("DISCORD_TOKEN")
+    if not token:
+        raise ValueError("DISCORD_TOKEN غير موجود في متغيرات البيئة Environment Variables")
+
+    bot.run(token)
