@@ -14,17 +14,19 @@ OWNER_ROLE_ID = 1533463569683845160
 
 ALLOWED_ROLE_IDS = {POINT_ROLE_ID, CO_OWNER_ROLE_ID, OWNER_ROLE_ID}
 
-# الرتب المسموح لها بإرسال أمر =توب
+# الرتب الـ 5 المسموح لها بإرسال أمر =توب
 TOP_ALLOWED_ROLE_IDS = {
+    1533463569683845160,
+    1533463570564649121,
+    1536368394868363344,
     1533463601908809748,
-    1533463600381956118,
-    1534471459739668570
+    1533463600381956118
 }
 
 RESET_ALLOWED_ROLE_IDS = {CO_OWNER_ROLE_ID, OWNER_ROLE_ID}
 
 # =========================
-# MongoDB (خاص بالبوت الثاني)
+# MongoDB
 # =========================
 MONGO_URI = os.getenv("MONGO_URI")
 client = MongoClient(MONGO_URI)
@@ -68,7 +70,7 @@ def set_points(user_id, points):
 # =========================
 @bot.event
 async def on_ready():
-    print(f"Bot 2 Logged in as: {bot.user}")
+    print(f"Bot Logged in as: {bot.user}")
 
 # =========================
 # الأوامر الرسمية
@@ -155,7 +157,7 @@ async def reset_points(ctx, member: discord.Member = None):
 # =========================
 app = Flask(__name__)
 @app.route("/")
-def home(): return "Bot 2 Online"
+def home(): return "Bot Online"
 
 def run_flask(): app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
 
